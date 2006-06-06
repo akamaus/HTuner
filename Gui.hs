@@ -10,7 +10,14 @@ import Data.Maybe(fromMaybe)
 import Control.Concurrent(yield)
 import Control.Concurrent.MVar
 
+import Data.Complex
+import Numeric.Transform.Fourier.FFT
+
+import Data.Array.IArray(amap,elems,bounds)
+
 import Capturer
+
+
 
 glade_path = "gui.glade"
 
@@ -45,15 +52,20 @@ run_gui = do
   onDestroy window_analizer mainQuit
 
   widgetShowAll window_analizer
-  timeoutAdd (yield >> return True) 100
+  timeoutAdd (yield >> return True) 50
   mainGUI
 
-draw_sound :: DrawingArea -> [Int16] -> IO ()
+draw_sound :: DrawingArea -> Samples -> IO ()
 draw_sound da samples = do
   (width', height') <- drawingAreaGetSize da
   let width = realToFrac width'
       height = realToFrac height'
-      num_samples = length samples
+      comp_samples = amap (\s -> (fint s) :+ 0 :: Complex Double) samples
+      spectrum = amap magnitude $ fft comp_samples
+      spec_list = elems spectrum
+      spec_len = length spec_list
+      peak = maximum spec_list
+
   drawable <- drawingAreaGetDrawWindow da
   renderWithDrawable drawable $!
     do -- clearing
@@ -65,8 +77,9 @@ draw_sound da samples = do
        setLineWidth 1
        moveTo 0 (height/2)
        mapM_ (uncurry lineTo) $!
-             zip [0, width / fint num_samples .. width]
-                 (map (\s -> height/2 - fint s * height / 65536) samples)
+             zip [0, width / fint spec_len * 2  .. width]
+                 (map (\s -> height - s * height / 65536 / (sqrt $ fint spec_len )) $ take (spec_len `div` 2) spec_list)
+
        stroke
 
 main = run_gui

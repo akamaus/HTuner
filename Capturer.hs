@@ -1,20 +1,23 @@
-module Capturer(run_capturer, fint, Int16)
+module Capturer(run_capturer, fint, Int16, Samples)
 where
 
 import Sound.OpenAL
 import Data.Maybe (fromMaybe)
 import Control.Monad (liftM,when)
 import Control.Concurrent (forkIO,threadDelay)
-import Data.Array.Storable (StorableArray, newArray, withStorableArray,getElems,readArray)
+import Data.Array.Storable (StorableArray, newArray, withStorableArray,getElems,readArray,freeze)
+import Data.Array(Array)
 import Data.Int(Int16)
 import Control.Concurrent.MVar
+
+type Samples = Array Int Int16
 
 buf_size = 128*1024
 
 fint :: (Num b, Integral a) => a -> b
 fint = fromIntegral
 
-run_capturer :: ([Int16] -> IO ()) -> IO (IO (), IO ())
+run_capturer :: (Samples -> IO ()) -> IO (IO (), IO ())
 run_capturer act = do
   mutex <- newMVar ()
   takeMVar mutex
@@ -29,17 +32,17 @@ run_capturer act = do
   return (start_cap, stop_cap)
 
 max_to_read = 1024
-reader_thread :: Device -> MVar () -> ([Int16] -> IO ()) -> IO ()
+reader_thread :: Device -> MVar () -> (Samples -> IO ()) -> IO ()
 reader_thread dev mutex act = do
   arr <- newArray (0, max_to_read - 1) 0 :: IO (StorableArray Int Int16)
   forever $! do
     withMVar mutex $ \_ -> do
       samples_ready <- get $! captureNumSamples dev
-      when (samples_ready > 0) $! do
+      when (samples_ready >= fint max_to_read) $! do
         let to_read = min samples_ready (fint max_to_read)
         withStorableArray arr $! \ptr -> do
           captureSamples dev ptr to_read
-        samples <- getElems arr
+        samples <- freeze arr
         act samples
         print samples_ready
     threadDelay 50000
