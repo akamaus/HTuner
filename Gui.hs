@@ -9,11 +9,14 @@ import Data.Maybe(fromMaybe)
 
 import Control.Concurrent(yield)
 import Control.Concurrent.MVar
+import Data.IORef
 
 import Data.Complex
 import Numeric.Transform.Fourier.FFT
 
 import Data.Array.IArray(amap,elems,bounds)
+
+import Data.Word(Word16)
 
 import Capturer
 
@@ -35,7 +38,9 @@ run_gui = do
   -- buttons
   button_start_stop <- xmlGetWidget xml castToButton "button_start_stop"
 
-  (start, stop) <- run_capturer $! draw_sound drawing_area
+
+  ray_pos <- newIORef 10 :: IO (IORef Int)
+  (start, stop) <- run_capturer $! draw_sound drawing_area ray_pos
 
   switch <- newMVar Stopped
   let start_stop = modifyMVar_ switch $ \st ->
@@ -55,31 +60,30 @@ run_gui = do
   timeoutAdd (yield >> return True) 50
   mainGUI
 
-draw_sound :: DrawingArea -> Samples -> IO ()
-draw_sound da samples = do
-  (width', height') <- drawingAreaGetSize da
-  let width = realToFrac width'
-      height = realToFrac height'
-      comp_samples = amap (\s -> (fint s) :+ 0 :: Complex Double) samples
-      spectrum = amap magnitude $ fft comp_samples
-      spec_list = elems spectrum
-      spec_len = length spec_list
-      peak = maximum spec_list
+draw_sound :: DrawingArea -> (IORef Int) -> Samples -> IO ()
+draw_sound da pos_ref samples = do
+  (width, height) <- drawingAreaGetSize da
+  let comp_samples = amap (\s -> (fint s) :+ 0 :: Complex Double) samples
+      freqs = amap (round . magnitude) $ fft comp_samples
+      freq_list = elems freqs :: [Word16]
+      freq_len = length freq_list
+      peak = maximum freq_list
+
+  ray_pos <- readIORef pos_ref
 
   drawable <- drawingAreaGetDrawWindow da
-  renderWithDrawable drawable $!
-    do -- clearing
-       setSourceRGB 1 1 1
-       rectangle 0 0 width height
-       fill
-       -- drawing
-       setSourceRGB 0 0 0
-       setLineWidth 1
-       moveTo 0 (height/2)
-       mapM_ (uncurry lineTo) $!
-             zip [0, width / fint spec_len * 2  .. width]
-                 (map (\s -> height - s * height / 65536 / (sqrt $ fint spec_len )) $ take (spec_len `div` 2) spec_list)
+  gc <- gcNew drawable
+  gc_vals <- gcGetValues gc
 
-       stroke
+  let set_point (y,c) = do
+        gcSetValues gc gc_vals --{foreground = Color c c c}
+        --drawPoint drawable gc (ray_pos, min y height)
+
+  --drawWindowBeginPaintRect drawable $ Rectangle ray_pos 0 1 height
+  mapM_ set_point $ zip (reverse [0 .. height]) $ take (max height (freq_len `div` 2)) freq_list
+  --drawWindowEndPaint drawable
+
+  writeIORef pos_ref $ if ray_pos >= width - 1 then 0 else ray_pos + 1
+
 
 main = run_gui
