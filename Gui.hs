@@ -11,6 +11,7 @@ import Control.Monad(unless)
 import Control.Concurrent(yield)
 import Control.Concurrent.MVar
 import Data.IORef
+import Control.Concurrent.Chan
 
 import Data.Complex
 import Numeric.Transform.Fourier.FFT
@@ -40,9 +41,18 @@ run_gui = do
   -- buttons
   button_start_stop <- xmlGetWidget xml castToButton "button_start_stop"
 
-  ray_pos <- newIORef 10 :: IO (IORef Int)
 
-  (start, stop) <- run_capturer $! draw_sound drawing_area ray_pos
+  samples_queue <- newChan :: IO (Chan Samples)
+  (start, stop) <- run_capturer $ writeChan samples_queue
+
+  ray_pos <- newIORef 10 :: IO (IORef Int)
+  let draw_next = do
+        empty <- isEmptyChan samples_queue
+        unless empty $ do
+          samples <- readChan samples_queue
+          draw_sound drawing_area ray_pos samples
+
+  timeoutAdd (draw_next >> return True) 20
 
   switch <- newMVar Stopped
   let start_stop = modifyMVar_ switch $ \st ->
@@ -59,7 +69,6 @@ run_gui = do
   onDestroy window_analizer mainQuit
 
   widgetShowAll window_analizer
-  timeoutAdd (yield >> return True) 50
   mainGUI
 
 draw_sound :: DrawingArea -> (IORef Int) -> Samples -> IO ()

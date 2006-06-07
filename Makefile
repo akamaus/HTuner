@@ -1,2 +1,2 @@
 all: Capturer.hs Gui.hs
-	ghc -O2 -o gui --make Gui.hs -i/home/maus/src/Haskell/haskelldsp-snapshot
+	ghc -O2 -o gui --make Gui.hs -i/home/maus/src/Haskell/haskelldsp-snapshot -threaded

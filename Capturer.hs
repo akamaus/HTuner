@@ -4,7 +4,7 @@ where
 import Sound.OpenAL
 import Data.Maybe (fromMaybe)
 import Control.Monad (liftM,when)
-import Control.Concurrent (forkIO,threadDelay)
+import Control.Concurrent (forkOS,threadDelay)
 import Data.Array.Storable (StorableArray, newArray, withStorableArray,getElems,readArray,freeze)
 import Data.Array(Array)
 import Data.Int(Int16)
@@ -21,8 +21,8 @@ run_capturer :: (Samples -> IO ()) -> IO (IO (), IO ())
 run_capturer act = do
   mutex <- newMVar ()
   takeMVar mutex
-  dev <- open_capture_device 8000 buf_size
-  tid <- forkIO (reader_thread dev mutex act)
+  dev <- open_capture_device 11025 buf_size
+  tid <- forkOS (reader_thread dev mutex act)
   let start_cap = do
         captureStart dev
         putMVar mutex ()
@@ -43,7 +43,6 @@ reader_thread dev mutex act = do
           captureSamples dev ptr $ fint to_read
           samples <- freeze arr
           act samples
-          print samples_ready
        else
         threadDelay 50000
 
