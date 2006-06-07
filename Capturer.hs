@@ -31,21 +31,21 @@ run_capturer act = do
         takeMVar mutex
   return (start_cap, stop_cap)
 
-max_to_read = 1024
+to_read = 512
 reader_thread :: Device -> MVar () -> (Samples -> IO ()) -> IO ()
 reader_thread dev mutex act = do
-  arr <- newArray (0, max_to_read - 1) 0 :: IO (StorableArray Int Int16)
+  arr <- newArray (0, to_read - 1) 0 :: IO (StorableArray Int Int16)
   forever $! do
     withMVar mutex $ \_ -> do
       samples_ready <- get $! captureNumSamples dev
-      when (samples_ready >= fint max_to_read) $! do
-        let to_read = min samples_ready (fint max_to_read)
+      if (samples_ready >= fint to_read) then
         withStorableArray arr $! \ptr -> do
-          captureSamples dev ptr to_read
-        samples <- freeze arr
-        act samples
-        print samples_ready
-    threadDelay 50000
+          captureSamples dev ptr $ fint to_read
+          samples <- freeze arr
+          act samples
+          print samples_ready
+       else
+        threadDelay 50000
 
 forever a = a >> forever a
 

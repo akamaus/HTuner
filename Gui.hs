@@ -6,6 +6,7 @@ import Graphics.UI.Gtk.Glade
 import Graphics.Rendering.Cairo
 
 import Data.Maybe(fromMaybe)
+import Control.Monad(unless)
 
 import Control.Concurrent(yield)
 import Control.Concurrent.MVar
@@ -15,8 +16,9 @@ import Data.Complex
 import Numeric.Transform.Fourier.FFT
 
 import Data.Array.IArray(amap,elems,bounds)
+import Data.Array.MArray(writeArray)
 
-import Data.Word(Word16)
+import Data.Word(Word16,Word8)
 
 import Capturer
 
@@ -38,8 +40,8 @@ run_gui = do
   -- buttons
   button_start_stop <- xmlGetWidget xml castToButton "button_start_stop"
 
-
   ray_pos <- newIORef 10 :: IO (IORef Int)
+
   (start, stop) <- run_capturer $! draw_sound drawing_area ray_pos
 
   switch <- newMVar Stopped
@@ -64,24 +66,31 @@ draw_sound :: DrawingArea -> (IORef Int) -> Samples -> IO ()
 draw_sound da pos_ref samples = do
   (width, height) <- drawingAreaGetSize da
   let comp_samples = amap (\s -> (fint s) :+ 0 :: Complex Double) samples
-      freqs = amap (round . magnitude) $ fft comp_samples
-      freq_list = elems freqs :: [Word16]
+      freqs = amap ((min 255) . round .(/256). magnitude) $ fft comp_samples
+      freq_list = elems freqs :: [Word8]
       freq_len = length freq_list
+      meaningful = freq_len `div` 2
       peak = maximum freq_list
 
   ray_pos <- readIORef pos_ref
 
   drawable <- drawingAreaGetDrawWindow da
   gc <- gcNew drawable
-  gc_vals <- gcGetValues gc
 
+  pb <- pixbufNew ColorspaceRgb False 8 1 meaningful
+  pixels <- pixbufGetPixels pb :: IO (PixbufData Int Word8)
+  stride <- pixbufGetRowstride pb
+  unless (stride == 4) $ error "unsupported format!"
   let set_point (y,c) = do
-        gcSetValues gc gc_vals --{foreground = Color c c c}
-        --drawPoint drawable gc (ray_pos, min y height)
+        writeArray pixels (stride*y) c
+        writeArray pixels (stride*y + 1) c
+        writeArray pixels (stride*y + 2) c
+        writeArray pixels (stride*y + 3) 0
 
-  --drawWindowBeginPaintRect drawable $ Rectangle ray_pos 0 1 height
-  mapM_ set_point $ zip (reverse [0 .. height]) $ take (max height (freq_len `div` 2)) freq_list
-  --drawWindowEndPaint drawable
+  mapM_ set_point $ zip (reverse [0 .. meaningful-1]) freq_list
+
+  scaled_to_fit <- pixbufScaleSimple pb 1 height InterpBilinear
+  drawPixbuf drawable gc scaled_to_fit 0 0 ray_pos 0 1 height RgbDitherNone (-1) (-1)
 
   writeIORef pos_ref $ if ray_pos >= width - 1 then 0 else ray_pos + 1
 
