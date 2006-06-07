@@ -66,31 +66,36 @@ draw_sound :: DrawingArea -> (IORef Int) -> Samples -> IO ()
 draw_sound da pos_ref samples = do
   (width, height) <- drawingAreaGetSize da
   let comp_samples = amap (\s -> (fint s) :+ 0 :: Complex Double) samples
-      freqs = amap ((min 255) . round .(/256). magnitude) $ fft comp_samples
+      freqs = amap ((min 255) . round .(/128). magnitude) $ fft comp_samples
       freq_list = elems freqs :: [Word8]
       freq_len = length freq_list
       meaningful = freq_len `div` 2
-      peak = maximum freq_list
-
+      peak = maximum $ map magnitude $ elems comp_samples
+  print peak
   ray_pos <- readIORef pos_ref
 
   drawable <- drawingAreaGetDrawWindow da
   gc <- gcNew drawable
 
-  pb <- pixbufNew ColorspaceRgb False 8 1 meaningful
+  pb <- pixbufNew ColorspaceRgb False 8 2 meaningful
   pixels <- pixbufGetPixels pb :: IO (PixbufData Int Word8)
   stride <- pixbufGetRowstride pb
-  unless (stride == 4) $ error "unsupported format!"
+  unless (stride == 8) $ error "unsupported format!"
   let set_point (y,c) = do
+        -- spectrum
         writeArray pixels (stride*y) c
         writeArray pixels (stride*y + 1) c
         writeArray pixels (stride*y + 2) c
-        writeArray pixels (stride*y + 3) 0
+        -- marker
+        writeArray pixels (stride*y + 3) 255
+        writeArray pixels (stride*y + 4) 0
+        writeArray pixels (stride*y + 5) 0
+
 
   mapM_ set_point $ zip (reverse [0 .. meaningful-1]) freq_list
 
-  scaled_to_fit <- pixbufScaleSimple pb 1 height InterpBilinear
-  drawPixbuf drawable gc scaled_to_fit 0 0 ray_pos 0 1 height RgbDitherNone (-1) (-1)
+  scaled_to_fit <- pixbufScaleSimple pb 2 height InterpBilinear
+  drawPixbuf drawable gc scaled_to_fit 0 0 ray_pos 0 2 height RgbDitherNone (-1) (-1)
 
   writeIORef pos_ref $ if ray_pos >= width - 1 then 0 else ray_pos + 1
 
