@@ -31,7 +31,7 @@ run_capturer act = do
         takeMVar mutex
   return (start_cap, stop_cap)
 
-to_read = 512
+to_read = 1024
 reader_thread :: Device -> MVar () -> (Samples -> IO ()) -> IO ()
 reader_thread dev mutex act = do
   arr <- newArray (0, to_read - 1) 0 :: IO (StorableArray Int Int16)

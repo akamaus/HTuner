@@ -6,7 +6,7 @@ import Graphics.UI.Gtk.Glade
 import Graphics.Rendering.Cairo
 
 import Data.Maybe(fromMaybe)
-import Control.Monad(unless)
+import Control.Monad(unless,when)
 
 import Control.Concurrent(yield)
 import Control.Concurrent.MVar
@@ -45,14 +45,19 @@ run_gui = do
   samples_queue <- newChan :: IO (Chan Samples)
   (start, stop) <- run_capturer $ writeChan samples_queue
 
-  ray_pos <- newIORef 10 :: IO (IORef Int)
+  dc <- newDC drawing_area 512
+  dc_ref <- newIORef dc
+
   let draw_next = do
         empty <- isEmptyChan samples_queue
         unless empty $ do
           samples <- readChan samples_queue
-          draw_sound drawing_area ray_pos samples
+          dc <- readIORef dc_ref
+          draw_sound dc samples
 
   timeoutAdd (draw_next >> return True) 20
+
+  onExposeRect drawing_area $ redraw_rect dc_ref
 
   switch <- newMVar Stopped
   let start_stop = modifyMVar_ switch $ \st ->
@@ -66,29 +71,46 @@ run_gui = do
 
   onClicked button_start_stop start_stop
 
+  afterSizeAllocate drawing_area $ on_resize drawing_area dc_ref
+
   onDestroy window_analizer mainQuit
 
   widgetShowAll window_analizer
   mainGUI
 
-draw_sound :: DrawingArea -> (IORef Int) -> Samples -> IO ()
-draw_sound da pos_ref samples = do
+data DrawingContext = DC { drawing_window :: DrawWindow,
+                           data_stripe :: Pixbuf,
+                           full_canvas :: Pixbuf,
+                           ray_pos :: IORef Int,
+                           stripe_length :: Int,
+                           canvas_size :: (Int,Int)
+                         }
+
+newDC :: DrawingArea -> Int -> IO DrawingContext
+newDC da stripe_len = do
   (width, height) <- drawingAreaGetSize da
+  dw <- drawingAreaGetDrawWindow da
+
+  ds <- pixbufNew ColorspaceRgb False 8 2 stripe_len
+  fc <- pixbufNew ColorspaceRgb False 8 width height
+  rp <- newIORef 0
+
+  return $! DC dw ds fc rp stripe_len (width, height)
+
+draw_sound :: DrawingContext -> Samples -> IO ()
+draw_sound dc samples = do
+  let (width, height) = canvas_size dc
+      meaningful = stripe_length dc
   let comp_samples = amap (\s -> (fint s) :+ 0 :: Complex Double) samples
       freqs = amap ((min 255) . round .(/128). magnitude) $ fft comp_samples
       freq_list = elems freqs :: [Word8]
-      freq_len = length freq_list
-      meaningful = freq_len `div` 2
-      peak = maximum $ map magnitude $ elems comp_samples
-  print peak
-  ray_pos <- readIORef pos_ref
+      peak = maximum $ map magnitude $ elems comp_samples  -- test
 
-  drawable <- drawingAreaGetDrawWindow da
-  gc <- gcNew drawable
+  pos <- readIORef $ ray_pos dc
 
-  pb <- pixbufNew ColorspaceRgb False 8 2 meaningful
-  pixels <- pixbufGetPixels pb :: IO (PixbufData Int Word8)
-  stride <- pixbufGetRowstride pb
+  let ds = data_stripe dc
+  pixels <- pixbufGetPixels ds :: IO (PixbufData Int Word8)
+  stride <- pixbufGetRowstride ds
   unless (stride == 8) $ error "unsupported format!"
   let set_point (y,c) = do
         -- spectrum
@@ -100,13 +122,40 @@ draw_sound da pos_ref samples = do
         writeArray pixels (stride*y + 4) 0
         writeArray pixels (stride*y + 5) 0
 
-
   mapM_ set_point $ zip (reverse [0 .. meaningful-1]) freq_list
 
-  scaled_to_fit <- pixbufScaleSimple pb 2 height InterpBilinear
-  drawPixbuf drawable gc scaled_to_fit 0 0 ray_pos 0 2 height RgbDitherNone (-1) (-1)
+  scaled_to_fit <- pixbufScaleSimple ds 2 height InterpBilinear
+  let canvas = full_canvas dc
 
-  writeIORef pos_ref $ if ray_pos >= width - 1 then 0 else ray_pos + 1
+  pixbufCopyArea scaled_to_fit 0 0 height (min 2 $ width - pos)  -- BUG in GTK2HS!!! width and height are swapped
+                 canvas pos 0
 
+  writeIORef (ray_pos dc) $ if pos >= width - 1 then 0 else pos + 1
+
+  let dw = drawing_window dc
+  dirty <- regionRectangle $ Rectangle pos 0 2 height
+  visible <- drawableGetVisibleRegion dw
+  regionIntersect dirty visible
+  drawWindowInvalidateRegion dw dirty False
+
+redraw_rect :: IORef DrawingContext -> Rectangle -> IO ()
+redraw_rect dc_ref rect = do
+  dc <- readIORef dc_ref
+  let Rectangle x y w h = rect
+      dw = drawing_window dc
+      stf = full_canvas dc
+  gc <- gcNew dw
+  print (x,y,w,h)
+  drawPixbuf dw gc stf x y x y w h RgbDitherNone w h
+
+on_resize :: DrawingArea -> IORef DrawingContext -> Allocation -> IO ()
+on_resize da dc_ref rect = do
+  dc <- readIORef dc_ref
+  let sl = stripe_length dc
+  pos <- readIORef (ray_pos dc)
+  dc' <- newDC da sl
+  when ( pos < (fst . canvas_size) dc') $
+         writeIORef (ray_pos dc') pos
+  writeIORef dc_ref dc'
 
 main = run_gui
