@@ -40,7 +40,9 @@ run_gui = do
   drawing_area <- xmlGetWidget xml castToDrawingArea "drawing_area"
   -- buttons
   button_start_stop <- xmlGetWidget xml castToButton "button_start_stop"
-
+  -- spin buttons
+  spinbutton_freq <- xmlGetWidget xml castToSpinButton "spinbutton_freq"
+  spinbutton_to_read <- xmlGetWidget xml castToSpinButton "spinbutton_to_read"
 
   samples_queue <- newChan :: IO (Chan Samples)
   (start, stop) <- run_capturer $ writeChan samples_queue
@@ -55,18 +57,23 @@ run_gui = do
           dc <- readIORef dc_ref
           draw_sound dc samples
 
-  timeoutAdd (draw_next >> return True) 20
+  timeoutAddFull (draw_next >> return True) priorityLow 20
 
   onExposeRect drawing_area $ redraw_rect dc_ref
 
   switch <- newMVar Stopped
   let start_stop = modifyMVar_ switch $ \st ->
                      case st of
-                       Stopped -> do start
-                                     buttonSetLabel button_start_stop "Stop"
+                       Stopped -> do freq <- spinButtonGetValueAsInt spinbutton_freq
+                                     to_read <- spinButtonGetValueAsInt spinbutton_to_read
+                                     widgetSetSizeRequest drawing_area 800 (to_read `div` 2)
+                                     dc <- newDC drawing_area (to_read `div` 2)
+                                     writeIORef dc_ref dc
+                                     start freq to_read
+                                     buttonSetLabel button_start_stop "Stop capturing"
                                      return Started
                        Started -> do stop
-                                     buttonSetLabel button_start_stop "Start"
+                                     buttonSetLabel button_start_stop "Start capturing"
                                      return Stopped
 
   onClicked button_start_stop start_stop
@@ -145,7 +152,6 @@ redraw_rect dc_ref rect = do
       dw = drawing_window dc
       stf = full_canvas dc
   gc <- gcNew dw
-  print (x,y,w,h)
   drawPixbuf dw gc stf x y x y w h RgbDitherNone w h
 
 on_resize :: DrawingArea -> IORef DrawingContext -> Allocation -> IO ()

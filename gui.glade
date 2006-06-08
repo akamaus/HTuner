@@ -115,7 +115,7 @@ frequency&lt;/b&gt;</property>
 	  </child>
 
 	  <child>
-	    <widget class="GtkSpinButton" id="spinbutton1">
+	    <widget class="GtkSpinButton" id="spinbutton_freq">
 	      <property name="visible">True</property>
 	      <property name="can_focus">True</property>
 	      <property name="climb_rate">1</property>
@@ -164,7 +164,7 @@ frequency&lt;/b&gt;</property>
 	  </child>
 
 	  <child>
-	    <widget class="GtkSpinButton" id="spinbutton2">
+	    <widget class="GtkSpinButton" id="spinbutton_to_read">
 	      <property name="visible">True</property>
 	      <property name="can_focus">True</property>
 	      <property name="climb_rate">1</property>
