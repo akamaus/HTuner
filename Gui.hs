@@ -8,7 +8,7 @@ import Graphics.Rendering.Cairo
 import Data.Maybe(fromMaybe)
 import Control.Monad(unless,when)
 
-import Control.Concurrent(yield)
+import Control.Concurrent(yield,forkOS)
 import Control.Concurrent.MVar
 import Data.IORef
 import Control.Concurrent.Chan
@@ -23,7 +23,7 @@ import Data.Word(Word16,Word8)
 
 import Capturer
 
-
+forever a = a >> forever a
 
 glade_path = "gui.glade"
 
@@ -47,15 +47,18 @@ run_gui = do
   samples_queue <- newChan :: IO (Chan Samples)
   (start, stop) <- run_capturer $ writeChan samples_queue
 
+  transformed_queue <- newChan :: IO (Chan Transformed)
+  forkOS $ fourier_trans samples_queue transformed_queue
+
   dc <- newDC drawing_area 512
   dc_ref <- newIORef dc
 
   let draw_next = do
-        empty <- isEmptyChan samples_queue
+        empty <- isEmptyChan transformed_queue
         unless empty $ do
-          samples <- readChan samples_queue
+          freqs <- readChan transformed_queue
           dc <- readIORef dc_ref
-          draw_sound dc samples
+          draw_sound dc freqs
 
   timeoutAddFull (draw_next >> return True) priorityLow 20
 
@@ -85,6 +88,17 @@ run_gui = do
   widgetShowAll window_analizer
   mainGUI
 
+type Transformed = [Word8]
+
+fourier_trans :: Chan Samples -> Chan Transformed -> IO ()
+fourier_trans input output = forever $! do
+  samples <- readChan input
+  let comp_samples = amap (\s -> (fint s) :+ 0 :: Complex Double) samples
+      freqs = amap ((min 255) . round .(/128). magnitude) $ fft comp_samples
+      freq_list = elems freqs :: [Word8]
+      half = let (a,b) = bounds samples in (b - a + 1) `div` 2
+  writeChan output $! take half freq_list
+
 data DrawingContext = DC { drawing_window :: DrawWindow,
                            data_stripe :: Pixbuf,
                            full_canvas :: Pixbuf,
@@ -104,14 +118,10 @@ newDC da stripe_len = do
 
   return $! DC dw ds fc rp stripe_len (width, height)
 
-draw_sound :: DrawingContext -> Samples -> IO ()
-draw_sound dc samples = do
+draw_sound :: DrawingContext -> Transformed -> IO ()
+draw_sound dc freqs = do
   let (width, height) = canvas_size dc
       meaningful = stripe_length dc
-  let comp_samples = amap (\s -> (fint s) :+ 0 :: Complex Double) samples
-      freqs = amap ((min 255) . round .(/128). magnitude) $ fft comp_samples
-      freq_list = elems freqs :: [Word8]
-      peak = maximum $ map magnitude $ elems comp_samples  -- test
 
   pos <- readIORef $ ray_pos dc
 
@@ -129,7 +139,7 @@ draw_sound dc samples = do
         writeArray pixels (stride*y + 4) 0
         writeArray pixels (stride*y + 5) 0
 
-  mapM_ set_point $ zip (reverse [0 .. meaningful-1]) freq_list
+  mapM_ set_point $ zip (reverse [0 .. meaningful-1]) freqs
 
   scaled_to_fit <- pixbufScaleSimple ds 2 height InterpBilinear
   let canvas = full_canvas dc
