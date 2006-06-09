@@ -93,8 +93,8 @@ type Transformed = [Word8]
 fourier_trans :: Chan Samples -> Chan Transformed -> IO ()
 fourier_trans input output = forever $! do
   samples <- readChan input
-  let comp_samples = amap (\s -> (fint s) :+ 0 :: Complex Double) samples
-      freqs = amap ((min 255) . round .(/128). magnitude) $ fft comp_samples
+  let samples' = amap (\s -> fint s :: Double) samples
+      freqs = amap ((min 255) . round .(/128). magnitude) $ rfft samples'
       freq_list = elems freqs :: [Word8]
       half = let (a,b) = bounds samples in (b - a + 1) `div` 2
   writeChan output $! take half freq_list
