@@ -5,16 +5,16 @@ import Graphics.UI.Gtk hiding (fill)
 import Graphics.UI.Gtk.Glade
 import Graphics.Rendering.Cairo
 
-import Data.Maybe(fromMaybe)
-import Control.Monad(unless,when)
+import Data.Maybe(fromMaybe,fromJust)
+import Control.Monad(unless,when,liftM)
 
 import Control.Concurrent(yield,forkOS)
 import Control.Concurrent.MVar
-import Data.IORef
 import Control.Concurrent.Chan
 
+import Data.IORef
+
 import Data.Complex
-import Numeric.Transform.Fourier.FFT
 
 import Data.Array.IArray(amap,elems,bounds)
 import Data.Array.MArray(writeArray)
@@ -22,6 +22,7 @@ import Data.Array.MArray(writeArray)
 import Data.Word(Word16,Word8)
 
 import Capturer
+import FFTW
 
 forever a = a >> forever a
 
@@ -48,7 +49,9 @@ run_gui = do
   (start, stop) <- run_capturer $ writeChan samples_queue
 
   transformed_queue <- newChan :: IO (Chan Transformed)
-  forkOS $ fourier_trans samples_queue transformed_queue
+  dummy_plan <- make_plan 512
+  plan_var <- newMVar (fromJust dummy_plan) :: IO (MVar FFTW_Plan)
+  forkOS $ fourier_trans plan_var samples_queue transformed_queue
 
   dc <- newDC drawing_area 512
   dc_ref <- newIORef dc
@@ -68,11 +71,15 @@ run_gui = do
   let start_stop = modifyMVar_ switch $ \st ->
                      case st of
                        Stopped -> do freq <- spinButtonGetValueAsInt spinbutton_freq
-                                     to_read <- spinButtonGetValueAsInt spinbutton_to_read
-                                     widgetSetSizeRequest drawing_area 800 (to_read `div` 2)
-                                     dc <- newDC drawing_area (to_read `div` 2)
+                                     resolution <- spinButtonGetValueAsInt spinbutton_to_read
+                                     let stripe_len = 1 + resolution `div` 2
+                                     widgetSetSizeRequest drawing_area 800 stripe_len
+                                     dc <- newDC drawing_area stripe_len
                                      writeIORef dc_ref dc
-                                     start freq to_read
+                                     plan <- liftM (fromMaybe (error "cant create plan")) $ make_plan resolution
+                                     takeMVar plan_var
+                                     putMVar plan_var plan
+                                     start freq resolution
                                      buttonSetLabel button_start_stop "Stop capturing"
                                      return Started
                        Started -> do stop
@@ -90,14 +97,13 @@ run_gui = do
 
 type Transformed = [Word8]
 
-fourier_trans :: Chan Samples -> Chan Transformed -> IO ()
-fourier_trans input output = forever $! do
+fourier_trans :: MVar FFTW_Plan -> Chan Samples -> Chan Transformed -> IO ()
+fourier_trans var input output = forever $ do
   samples <- readChan input
-  let samples' = amap (\s -> fint s :: Double) samples
-      freqs = amap ((min 255) . round .(/128). magnitude) $ rfft samples'
-      freq_list = elems freqs :: [Word8]
-      half = let (a,b) = bounds samples in (b - a + 1) `div` 2
-  writeChan output $! take half freq_list
+  let samples' = map fint $ elems samples :: [Double]
+  comp_list <- withMVar var $ \plan -> execute plan samples'
+  let freqs = map (round . (min 255) . (/128). magnitude) comp_list :: [Word8]
+  writeChan output freqs
 
 data DrawingContext = DC { drawing_window :: DrawWindow,
                            data_stripe :: Pixbuf,
@@ -122,7 +128,6 @@ draw_sound :: DrawingContext -> Transformed -> IO ()
 draw_sound dc freqs = do
   let (width, height) = canvas_size dc
       meaningful = stripe_length dc
-
   pos <- readIORef $ ray_pos dc
 
   let ds = data_stripe dc
