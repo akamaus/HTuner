@@ -1,5 +1,5 @@
---module Gui(run_gui)
---where
+module Main
+where
 
 import Graphics.UI.Gtk hiding (fill)
 import Graphics.UI.Gtk.Glade
@@ -44,6 +44,8 @@ run_gui = do
   -- spin buttons
   spinbutton_freq <- xmlGetWidget xml castToSpinButton "spinbutton_freq"
   spinbutton_to_read <- xmlGetWidget xml castToSpinButton "spinbutton_to_read"
+  spinbutton_energy <- xmlGetWidget xml castToSpinButton "spinbutton_energy"
+
 
   samples_queue <- newChan :: IO (Chan Samples)
   (start, stop) <- run_capturer $ writeChan samples_queue
@@ -51,7 +53,8 @@ run_gui = do
   transformed_queue <- newChan :: IO (Chan Transformed)
   dummy_plan <- make_plan 512
   plan_var <- newMVar (fromJust dummy_plan) :: IO (MVar FFTW_Plan)
-  forkOS $ fourier_trans plan_var samples_queue transformed_queue
+  desired_energy_var <- newMVar init_energy_level :: IO (MVar Double)
+  forkOS $ fourier_trans desired_energy_var plan_var samples_queue transformed_queue
 
   dc <- newDC drawing_area 512
   dc_ref <- newIORef dc
@@ -88,6 +91,11 @@ run_gui = do
 
   onClicked button_start_stop start_stop
 
+  onValueSpinned spinbutton_energy $ do
+    val <- spinButtonGetValue spinbutton_energy
+    takeMVar desired_energy_var
+    putMVar desired_energy_var val
+
   afterSizeAllocate drawing_area $ on_resize drawing_area dc_ref
 
   onDestroy window_analizer mainQuit
@@ -97,13 +105,36 @@ run_gui = do
 
 type Transformed = [Word8]
 
-fourier_trans :: MVar FFTW_Plan -> Chan Samples -> Chan Transformed -> IO ()
-fourier_trans var input output = forever $ do
-  samples <- readChan input
-  let samples' = map fint $ elems samples :: [Double]
-  comp_list <- withMVar var $ \plan -> execute plan samples'
-  let freqs = map (round . (min 255) . (/128). magnitude) comp_list :: [Word8]
-  writeChan output freqs
+init_gain = 1/100
+gain_step = 1.05
+init_energy_level = 10 :: Double
+
+fourier_trans :: MVar Double -> MVar FFTW_Plan -> Chan Samples -> Chan Transformed -> IO ()
+fourier_trans desir_energy_var var input output = do
+  --gain_ref <- newIORef init_gain
+  forever $ do
+    samples <- readChan input
+    let samples' = map fint $ elems samples :: [Double]
+        shadow = map (\k -> exp $ -8 * (fint k / fint (length samples') - 0.5)^2 ) [0..]
+        shadowed = zipWith (*) samples' shadow
+    comp_list <- withMVar var $ \plan -> execute plan shadowed
+    --gain <- readIORef gain_ref
+    abate <- readMVar desir_energy_var
+    let freqs = map ((/abate) . log . magnitude) comp_list
+        --sharpen = zipWith (\x y -> abs (x - y)) freqs (0:freqs)
+        low = max 0 (minimum freqs)
+        high = maximum freqs
+        a = 255 / (high - low)
+        b = -a * low
+        bounded = map (\y -> round $ a*y + b)  freqs -- sharpen
+    --print freqs
+    print $ maximum bounded
+   {-     energy = sum (map fint bounded) / fint (length freqs)
+    print energy
+    withMVar desir_energy_var $ \energy_level ->
+      if energy < energy_level then writeIORef gain_ref (gain * gain_step)
+       else writeIORef gain_ref (gain / gain_step) -}
+    writeChan output bounded
 
 data DrawingContext = DC { drawing_window :: DrawWindow,
                            data_stripe :: Pixbuf,
