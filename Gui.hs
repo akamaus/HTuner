@@ -18,7 +18,7 @@ import Data.Complex
 
 import Data.Array.IArray(amap,elems,bounds)
 import Data.Array.MArray(writeArray)
-
+import Data.Array.Base(unsafeWrite)
 import Data.Word(Word16,Word8)
 
 import Capturer
@@ -31,7 +31,8 @@ glade_path = "gui.glade"
 data Switch = Started | Stopped
 
 run_gui = do
-  initGUI
+  --initGUI
+  unsafeInitGUIForThreadedRTS
   -- reading xml
   xmlM <- xmlNewWithRootAndDomain glade_path (Just "window_analizer") Nothing
   let xml = fromMaybe (error "cant open xml gui description!") xmlM
@@ -115,8 +116,8 @@ data DrawingContext = DC { drawing_window :: DrawWindow,
 
 newDC :: DrawingArea -> Int -> IO DrawingContext
 newDC da stripe_len = do
-  (width, height) <- drawingAreaGetSize da
-  dw <- drawingAreaGetDrawWindow da
+  (width, height) <- widgetGetSize da
+  dw <- widgetGetDrawWindow da
 
   ds <- pixbufNew ColorspaceRgb False 8 2 stripe_len
   fc <- pixbufNew ColorspaceRgb False 8 width height
@@ -136,20 +137,18 @@ draw_sound dc freqs = do
   unless (stride == 8) $ error "unsupported format!"
   let set_point (y,c) = do
         -- spectrum
-        writeArray pixels (stride*y) c
-        writeArray pixels (stride*y + 1) c
-        writeArray pixels (stride*y + 2) c
+        unsafeWrite pixels (stride*y) c
+        unsafeWrite pixels (stride*y + 1) c
+        unsafeWrite pixels (stride*y + 2) c
         -- marker
-        writeArray pixels (stride*y + 3) 255
-        writeArray pixels (stride*y + 4) 0
-        writeArray pixels (stride*y + 5) 0
-
+        unsafeWrite pixels (stride*y + 3) 255
+        unsafeWrite pixels (stride*y + 4) 0
+        unsafeWrite pixels (stride*y + 5) 0
   mapM_ set_point $ zip (reverse [0 .. meaningful-1]) freqs
 
   scaled_to_fit <- pixbufScaleSimple ds 2 height InterpBilinear
   let canvas = full_canvas dc
-
-  pixbufCopyArea scaled_to_fit 0 0 height (min 2 $ width - pos)  -- BUG in GTK2HS!!! width and height are swapped
+  pixbufCopyArea scaled_to_fit 0 0 (min 2 $ width - pos) height
                  canvas pos 0
 
   writeIORef (ray_pos dc) $ if pos >= width - 1 then 0 else pos + 1
