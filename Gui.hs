@@ -176,11 +176,18 @@ draw_sound dc freqs = do
 
   -- Drawing ref tone
   rt <- comboBoxGetActive $ cb_ref_tone dc
+
+  let draw_freq f c = do
+        let n = round $ (2 * f) * (fromIntegral meaningful) / (fromIntegral $ frequency dc)
+        when (n >= 0 && n < meaningful) $ do
+          set_color (meaningful - n) 0 c -- origin is on top
+
   unless (rt == -1) $ do
-    let n = round $ (fromIntegral $ frequency dc) / (c1 * halfstep ^ rt)
-    unless (n < 0 || n >= meaningful) $ do
-      set_color n 0 (0,255,0)
-      print (c1 * halfstep ^ rt)
+    let pitch = c1 * halfstep ^ rt
+        bound = (halfstep ** 0.5)
+    draw_freq pitch           (0,255,0)
+    draw_freq (pitch / bound) (0,0, 255)
+    draw_freq (pitch * bound) (0,0, 255)
 
   scaled_to_fit <- pixbufScaleSimple ds 2 height InterpBilinear
   let canvas = full_canvas dc
