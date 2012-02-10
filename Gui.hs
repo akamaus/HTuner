@@ -1,9 +1,11 @@
 --module Gui(run_gui)
 --where
 
-import Graphics.UI.Gtk hiding (fill)
+import Graphics.UI.Gtk
 import Graphics.UI.Gtk.Glade
 import Graphics.Rendering.Cairo
+
+import Graphics.UI.Gtk.Gdk.GC
 
 import Data.Maybe(fromMaybe,fromJust)
 import Control.Monad(unless,when,liftM)
@@ -168,7 +170,7 @@ redraw_rect dc_ref rect = do
   gc <- gcNew dw
   drawPixbuf dw gc stf x y x y w h RgbDitherNone w h
 
-on_resize :: DrawingArea -> IORef DrawingContext -> Allocation -> IO ()
+--on_resize :: DrawingArea -> IORef DrawingContext -> Allocation -> IO ()
 on_resize da dc_ref rect = do
   dc <- readIORef dc_ref
   let sl = stripe_length dc
