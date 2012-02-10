@@ -172,7 +172,7 @@ draw_sound dc freqs = do
         unsafeWrite pixels (stride*y + d+1) g
         unsafeWrite pixels (stride*y + d+2) b
 
-  mapM_ set_point $ zip (reverse [0 .. meaningful-1]) freqs
+  mapM_ set_point $ zip [meaningful-1, meaningful-2 .. 0] freqs
 
   -- Drawing ref tone
   rt <- comboBoxGetActive $ cb_ref_tone dc
