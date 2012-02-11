@@ -141,7 +141,10 @@ fourier_trans :: MVar FFTW_Plan -> Chan Samples -> Chan Transformed -> IO ()
 fourier_trans var input output = forever $ do
   samples <- readChan input
   let samples' = map fint $ elems samples :: [Double]
-  comp_list <- withMVar var $ \plan -> execute plan samples'
+      n = length samples'
+      sine = map (\k -> sin $ fromIntegral k / fromIntegral n * pi) [0..n-1]
+      samples'' = zipWith(*) sine samples'
+  comp_list <- withMVar var $ \plan -> execute plan samples''
   let freqs = map (round . (min 255) . (/128). magnitude) comp_list :: [Word8]
   writeChan output freqs
 
