@@ -48,6 +48,7 @@ run_gui = do
   button_start_stop <- xmlGetWidget xml castToButton "button_start_stop"
   -- spin buttons
   spinbutton_freq <- xmlGetWidget xml castToSpinButton "spinbutton_freq"
+  spinbutton_top_freq <- xmlGetWidget xml castToSpinButton "spinbutton_top_freq"
   spinbutton_to_read <- xmlGetWidget xml castToSpinButton "spinbutton_to_read"
   combobox_reference_tone <- xmlGetWidget xml castToComboBox "combobox_reference_tone"
 
@@ -60,13 +61,13 @@ run_gui = do
   forkOS $ fourier_trans plan_var samples_queue transformed_queue
 
   -- Drawing context
-  let newDC :: Int -> Int -> IO DrawingContext
-      newDC freq stripe_len = do
+  let newDC :: Int -> Int -> Int -> IO DrawingContext
+      newDC freq buf_halfsize stripe_len = do
       (width, height) <- widgetGetSize drawing_area
       dw <- widgetGetDrawWindow drawing_area
 
-      ds <- pixbufNew ColorspaceRgb False 8 2 stripe_len
-      fc <- pixbufNew ColorspaceRgb False 8 width height
+      ds <- pixbufNew ColorspaceRgb False 8 2 stripe_len -- scan line
+      fc <- pixbufNew ColorspaceRgb False 8 width height -- in memory canvas
       rp <- newIORef 0
 
       return $! DC {
@@ -76,10 +77,11 @@ run_gui = do
                  full_canvas = fc,
                  ray_pos = rp,
                  frequency = freq,
+                 buffer_halfsize = buf_halfsize,
                  stripe_length = stripe_len,
                  canvas_size = (width, height) }
 
-  dc <- newDC 8000 512
+  dc <- newDC 8000 512 512
   dc_ref <- newIORef dc
 
   let draw_next = do
@@ -99,11 +101,12 @@ run_gui = do
                      case st of
                        Stopped -> do freq <- spinButtonGetValueAsInt spinbutton_freq
                                      resolution <- spinButtonGetValueAsInt spinbutton_to_read
-                                     let stripe_len = 1 + resolution `div` 2
-                                     widgetSetSizeRequest drawing_area 800 stripe_len
-                                     dc <- newDC freq stripe_len
-                                     let dc' = dc {cb_ref_tone = combobox_reference_tone, frequency = freq}
-                                     writeIORef dc_ref dc'
+                                     top_freq <- spinButtonGetValueAsInt spinbutton_top_freq
+                                     let buf_halfsize = 1 + resolution `div` 2
+                                         stripe_len = freq_to_index freq buf_halfsize (fromIntegral top_freq)
+                                     widgetSetSizeRequest drawing_area 700 stripe_len
+                                     dc <- newDC freq buf_halfsize stripe_len
+                                     writeIORef dc_ref dc
                                      plan <- liftM (fromMaybe (error "cant create plan")) $ make_plan resolution
                                      takeMVar plan_var
                                      putMVar plan_var plan
@@ -117,9 +120,8 @@ run_gui = do
   --on_resize :: DrawingArea -> IORef DrawingContext -> Allocation -> IO ()
   let on_resize dc_ref rect = do
         dc <- readIORef dc_ref
-        let sl = stripe_length dc
         pos <- readIORef (ray_pos dc)
-        dc' <- newDC (frequency dc)  sl
+        dc' <- newDC (frequency dc) (buffer_halfsize dc) (stripe_length dc)
         when ( pos < (fst . canvas_size) dc') $ do
           writeIORef (ray_pos dc') pos
           writeIORef dc_ref dc'
@@ -143,12 +145,20 @@ fourier_trans var input output = forever $ do
   let freqs = map (round . (min 255) . (/128). magnitude) comp_list :: [Word8]
   writeChan output freqs
 
+-- Converts a frequency to an array index as returned by FFTW,
+-- takes discretisation frequency and buffer size divided by two
+-- (signal is real, so second half of returned values is redundand)
+freq_to_index :: Int -> Int -> Double -> Int
+freq_to_index freq0 buf_halfsize f =
+    round $ (2 * f) * (fromIntegral buf_halfsize) / (fromIntegral $ freq0)
+
 data DrawingContext = DC { drawing_window :: DrawWindow,
                            cb_ref_tone :: ComboBox,
                            data_stripe :: Pixbuf,
                            full_canvas :: Pixbuf,
                            ray_pos :: IORef Int,
                            frequency :: Int,
+                           buffer_halfsize :: Int,
                            stripe_length :: Int,
                            canvas_size :: (Int,Int)
                          }
@@ -156,7 +166,7 @@ data DrawingContext = DC { drawing_window :: DrawWindow,
 draw_sound :: DrawingContext -> Transformed -> IO ()
 draw_sound dc freqs = do
   let (width, height) = canvas_size dc
-      meaningful = stripe_length dc
+      stripe_len = stripe_length dc
   pos <- readIORef $ ray_pos dc
 
   let ds = data_stripe dc
@@ -172,15 +182,15 @@ draw_sound dc freqs = do
         unsafeWrite pixels (stride*y + d+1) g
         unsafeWrite pixels (stride*y + d+2) b
 
-  mapM_ set_point $ zip [meaningful-1, meaningful-2 .. 0] freqs
+  mapM_ set_point $ zip [stripe_len-1, stripe_len-2 .. 0] freqs
 
   -- Drawing ref tone
   rt <- comboBoxGetActive $ cb_ref_tone dc
 
   let draw_freq f c = do
-        let n = round $ (2 * f) * (fromIntegral meaningful) / (fromIntegral $ frequency dc)
-        when (n >= 0 && n < meaningful) $ do
-          set_color (meaningful - n) 0 c -- origin is on top
+        let n = freq_to_index (frequency dc) (buffer_halfsize dc) f
+        when (n >= 0 && n < stripe_len) $ do
+          set_color (stripe_len - n) 0 c -- origin is on top
 
   unless (rt == -1) $ do
     let pitch = c1 * halfstep ^ rt

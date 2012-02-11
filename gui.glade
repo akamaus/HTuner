@@ -67,7 +67,7 @@ frequency&lt;/b&gt;</property>
               <widget class="GtkSpinButton" id="spinbutton_freq">
                 <property name="visible">True</property>
                 <property name="can_focus">True</property>
-                <property name="adjustment">8000 8000 44000 1000 10 10</property>
+                <property name="adjustment">44000 8000 44000 1000 10 10</property>
                 <property name="climb_rate">1</property>
               </widget>
               <packing>
@@ -84,8 +84,8 @@ frequency&lt;/b&gt;</property>
                 <property name="use_markup">True</property>
               </widget>
               <packing>
-                <property name="top_attach">1</property>
-                <property name="bottom_attach">2</property>
+                <property name="top_attach">2</property>
+                <property name="bottom_attach">3</property>
                 <property name="x_options">GTK_FILL</property>
                 <property name="y_options"></property>
               </packing>
@@ -94,14 +94,14 @@ frequency&lt;/b&gt;</property>
               <widget class="GtkSpinButton" id="spinbutton_to_read">
                 <property name="visible">True</property>
                 <property name="can_focus">True</property>
-                <property name="adjustment">128 128 4096 128 10 10</property>
+                <property name="adjustment">2048 128 16384 128 10 10</property>
                 <property name="climb_rate">1</property>
               </widget>
               <packing>
                 <property name="left_attach">1</property>
                 <property name="right_attach">2</property>
-                <property name="top_attach">1</property>
-                <property name="bottom_attach">2</property>
+                <property name="top_attach">2</property>
+                <property name="bottom_attach">3</property>
                 <property name="y_options"></property>
               </packing>
             </child>
@@ -171,17 +171,11 @@ frequency&lt;/b&gt;</property>
                 <property name="use_markup">True</property>
               </widget>
               <packing>
-                <property name="top_attach">2</property>
-                <property name="bottom_attach">3</property>
+                <property name="top_attach">3</property>
+                <property name="bottom_attach">4</property>
                 <property name="x_options">GTK_FILL</property>
                 <property name="y_options"></property>
               </packing>
-            </child>
-            <child>
-              <placeholder/>
-            </child>
-            <child>
-              <placeholder/>
             </child>
             <child>
               <widget class="GtkComboBox" id="combobox_reference_tone">
@@ -202,9 +196,39 @@ H</property>
               <packing>
                 <property name="left_attach">1</property>
                 <property name="right_attach">2</property>
-                <property name="top_attach">2</property>
-                <property name="bottom_attach">3</property>
+                <property name="top_attach">3</property>
+                <property name="bottom_attach">4</property>
                 <property name="x_options">GTK_FILL</property>
+                <property name="y_options"></property>
+              </packing>
+            </child>
+            <child>
+              <widget class="GtkLabel" id="label3">
+                <property name="visible">True</property>
+                <property name="xalign">0.41999998688697815</property>
+                <property name="label" translatable="yes">&lt;b&gt;Top frequency&lt;/b&gt;</property>
+                <property name="use_markup">True</property>
+              </widget>
+              <packing>
+                <property name="top_attach">1</property>
+                <property name="bottom_attach">2</property>
+                <property name="x_options">GTK_FILL</property>
+                <property name="y_options"></property>
+              </packing>
+            </child>
+            <child>
+              <widget class="GtkSpinButton" id="spinbutton_top_freq">
+                <property name="visible">True</property>
+                <property name="can_focus">True</property>
+                <property name="invisible_char">&#x25CF;</property>
+                <property name="adjustment">2000 50 22000 1 100 10</property>
+                <property name="climb_rate">1</property>
+              </widget>
+              <packing>
+                <property name="left_attach">1</property>
+                <property name="right_attach">2</property>
+                <property name="top_attach">1</property>
+                <property name="bottom_attach">2</property>
                 <property name="y_options"></property>
               </packing>
             </child>

@@ -38,7 +38,6 @@ run_capturer act = do
 
   return (start_cap, stop_cap)
 
-to_read = 1024
 reader_thread :: MVar (Device,Int) -> (Samples -> IO ()) -> IO ()
 reader_thread var act = do
   forever $! do
