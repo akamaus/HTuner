@@ -5,8 +5,8 @@ import Sound.OpenAL
 import Data.Maybe (fromMaybe)
 import Control.Monad (liftM,when,unless)
 import Control.Concurrent (forkOS,threadDelay)
-import Data.Array.Storable (StorableArray, newArray, withStorableArray,getElems,readArray,freeze)
-import Data.Array(Array)
+import Data.Array.Storable (StorableArray, newArray, withStorableArray,getElems,readArray,unsafeFreeze)
+import Data.Array(Array, bounds, elems, listArray)
 import Data.Int(Int16)
 import Control.Concurrent.MVar
 
@@ -39,20 +39,36 @@ run_capturer act = do
   return (start_cap, stop_cap)
 
 reader_thread :: MVar (Device,Int) -> (Samples -> IO ()) -> IO ()
-reader_thread var act = do
-  forever $! do
-    res <- withMVar var $ \(dev, to_read) -> do
-      arr <- newArray (0, to_read - 1) 0 :: IO (StorableArray Int Int16)
-      samples_ready <- get $! captureNumSamples dev
-      if (samples_ready >= fint to_read) then
-        withStorableArray arr $! \ptr -> do
-          captureSamples dev ptr $ fint to_read
-          samples <- freeze arr
-          act samples
-          return True
-       else
-          return False
-    unless res $ threadDelay 50000
+reader_thread var act = grab_chunks 2 []
+ where
+  grab_chunk num_chunks = do
+    withMVar var $ \(dev, buf_size) -> do
+      let to_read = buf_size `div` num_chunks
+      grab_samples dev to_read
+  grab_chunks n chunks = do
+    ch <- grab_chunk n
+    let chunks' = chunks ++ [ch]
+    if length chunks < n-1 then
+      grab_chunks n chunks'
+     else do
+      act $ sum_chunks chunks'
+      grab_chunks n (tail chunks')
+
+
+sum_chunks xs = let size = sum $ map ((\(a,b) -> b-a+1) . bounds) xs
+                in listArray (0, size-1) $ concat $ map elems xs
+
+-- Reads a given number of samples from audio device. Waits if necessary
+grab_samples dev num = do
+  samples_ready <- get $! captureNumSamples dev
+  if (samples_ready >= fint num) then do
+    arr <- newArray (0, num - 1) 0 :: IO (StorableArray Int Int16)
+    withStorableArray arr $! \ptr -> do
+      captureSamples dev ptr $ fint num
+      unsafeFreeze arr
+   else do
+    threadDelay 10000
+    grab_samples dev num
 
 forever a = a >> forever a
 
