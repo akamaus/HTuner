@@ -195,12 +195,15 @@ draw_sound dc freqs = do
         when (n >= 0 && n < stripe_len) $ do
           set_color (stripe_len - n) 0 c -- origin is on top
 
+      draw_pitch f = do
+        let bound = (halfstep ** 0.5)
+        draw_freq  f          (0,255, 0)
+        draw_freq (f / bound) (0,0, 255)
+        draw_freq (f * bound) (0,0, 255)
+
   unless (rt == -1) $ do
     let pitch = c1 * halfstep ^ rt
-        bound = (halfstep ** 0.5)
-    draw_freq pitch           (0,255,0)
-    draw_freq (pitch / bound) (0,0, 255)
-    draw_freq (pitch * bound) (0,0, 255)
+    mapM_ (\octave -> draw_pitch (pitch * 2**octave)) [-1..3]
 
   scaled_to_fit <- pixbufScaleSimple ds 2 height InterpBilinear
   let canvas = full_canvas dc
