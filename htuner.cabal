@@ -1,0 +1,20 @@
+Name:           HTuner
+Version:        0.5
+Cabal-Version:  >= 1.2
+License:        GPL
+Author:         Dmitry V'yal<akamaus@gmail.com>
+maintainer:     Dmitry V'yal<akamaus@gmail.com>
+Synopsis:       Audio signal spectrum analyzer and pitch tuner
+Build-Type:     Simple
+
+Data-dir:       resources
+Data-files:     htuner.glade
+
+Executable htuner
+  Build-Depends:  base>=4, array>=0.3, OpenAL>=1.4, gtk>=0.12, cairo>=0.12, glade>=0.12
+  Main-Is:        Gui.hs
+  Other-modules:  FFTW
+  Hs-Source-Dirs: src
+  ghc-options:    -W -O2 -threaded
+  extra-libraries: fftw3
+

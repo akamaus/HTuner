@@ -1,4 +1,4 @@
-{-# OPTIONS -fffi #-}
+{-# LANGUAGE ForeignFunctionInterface #-}
 module FFTW (FFTW_Plan, make_plan, execute)
 where
 

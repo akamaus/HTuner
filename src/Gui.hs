@@ -1,5 +1,6 @@
 --module Gui(run_gui)
 --where
+import Paths_HTuner
 
 import Graphics.UI.Gtk
 import Graphics.UI.Gtk.Glade
@@ -30,14 +31,13 @@ import Tones
 
 forever a = a >> forever a
 
-glade_path = "gui.glade"
-
 data Switch = Started | Stopped
 
 run_gui = do
   --initGUI
   unsafeInitGUIForThreadedRTS
   -- reading xml
+  glade_path <- getDataFileName "htuner.glade"
   xmlM <- xmlNewWithRootAndDomain glade_path (Just "window_analizer") Nothing
   let xml = fromMaybe (error "cant open xml gui description!") xmlM
   -- main window
